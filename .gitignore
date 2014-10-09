@@ -1,0 +1,12 @@
+*.txt
+*.dot
+
+*.swn
+*.swp
+*.swo
+*.swq
+
+a.out
+depend
+
+*.pdf

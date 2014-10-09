@@ -1,0 +1,2 @@
+- build a DAG representing the dependencies in a Fortran build
+- perform topological sort to determine a safe ordering for build
