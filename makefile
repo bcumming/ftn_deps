@@ -1,4 +1,4 @@
-CXX=clang++
+CXX=g++
 
 ftn_deps: ftn_deps.cpp
 	${CXX} -std=c++11 ftn_deps.cpp -o ftn_deps
