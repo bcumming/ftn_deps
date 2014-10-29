@@ -42,6 +42,11 @@ int get_key(std::string const& name, NameMap& map) {
     }
 }
 
+int find_key(std::string const& name, NameMap& map) {
+    auto key_pos = map.find(name);
+    return key_pos==map.end() ? -1 : key_pos->second;
+}
+
 std::string get_name(int key, NameMap const& map) {
     for(auto pair : map)
         if(pair.second == key)
@@ -54,19 +59,53 @@ void strip(std::string &str) {
     str.erase(pos, str.end());
 }
 
-void print_deps(std::vector<int> const& keys, Map const& child_map, Map const& parent_map, NameMap const& map) {
+void print_connections( std::vector<int> const& keys,
+                        Map const& child_map,
+                        Map const& parent_map,
+                        NameMap const& map)
+{
     std::ofstream fout("depend.dot");
     fout << "Digraph G {" << std::endl;
     for(auto k : keys) {
         auto const& children = child_map[k];
         std::string name = get_name(k, map);
+        strip(name);
         for(auto child : children) {
-            fout << "  " << name << " -> " << get_name(child, map) << std::endl;
+            auto child_name = get_name(child, map);
+            strip(child_name);
+            fout << "  " << name << " -> " << child_name << std::endl;
         }
         auto const& parents = parent_map[k];
         for(auto parent : parents) {
-            fout << "  " << get_name(parent, map) << " -> " << name << std::endl;
+            auto parent_name = get_name(parent, map);
+            strip(parent_name);
+            fout << "  " << parent_name << " -> " << name << std::endl;
         }
+    }
+    fout << "}" << std::endl;
+}
+
+void get_dependencies(  int key,
+                        Map const& parent_map,
+                        std::set<std::pair<int,int>> &key_pairs)
+{
+    for(auto k : parent_map[key]) {
+        key_pairs.insert(std::make_pair(k, key));
+        get_dependencies(k, parent_map, key_pairs);
+    }
+}
+
+void print_dependencies(int key, Map const& parent_map, NameMap const& map) {
+    std::ofstream fout("depend.dot");
+    std::set<std::pair<int,int>> key_pairs;
+    get_dependencies(key, parent_map, key_pairs);
+    fout << "Digraph G {" << std::endl;
+    for(auto const &p : key_pairs) {
+        auto from_name = get_name(p.first,  map);
+        auto to_name   = get_name(p.second, map);
+        strip(from_name);
+        strip(to_name);
+        fout << "  " << from_name << " -> " << to_name << std::endl;
     }
     fout << "}" << std::endl;
 }
@@ -134,8 +173,14 @@ int main(void) {
     // sample of how to print out a graphviz file to visualize dependencies of
     // a key. Don't try this for the global dependencies list, the graph is
     // too big to realistically render
-    std::vector<int> keys_to_print = {32, 4};
-    print_deps(keys_to_print, child_map, parent_map, name_map);
+    std::vector<int> keys_to_print;// = {32};
+
+    keys_to_print.push_back( find_key(std::string("utilities.o"), name_map) );
+    keys_to_print.push_back( find_key(std::string("data_parameters.o"), name_map) );
+    keys_to_print.push_back( find_key(std::string("parallel_utilities.o"), name_map) );
+
+    print_connections(keys_to_print, child_map, parent_map, name_map);
+    print_dependencies(45, parent_map, name_map);
 
     std::cout << "sorting" << std::endl;
     // topological sort on the DAG
