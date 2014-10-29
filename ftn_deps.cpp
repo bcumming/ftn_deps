@@ -26,9 +26,10 @@ split_string(const std::string &s, char delim) {
     return split_string(s, delim, elems);
 }
 
-typedef std::map<std::string, int> NameMap;
-typedef std::pair<std::string, int> NamePair;
-typedef std::vector<std::vector<int>> Map;
+typedef std::map<std::string, int>      NameMap;
+typedef std::pair<std::string, int>     NamePair;
+typedef std::vector<std::vector<int>>   Map;
+typedef std::map<int, std::vector<int>> SparseMap;
 
 int get_key(std::string const& name, NameMap& map) {
     auto key_pos = map.find(name);
@@ -69,16 +70,13 @@ void print_connections( std::vector<int> const& keys,
     for(auto k : keys) {
         auto const& children = child_map[k];
         std::string name = get_name(k, map);
-        strip(name);
         for(auto child : children) {
             auto child_name = get_name(child, map);
-            strip(child_name);
             fout << "  " << name << " -> " << child_name << std::endl;
         }
         auto const& parents = parent_map[k];
         for(auto parent : parents) {
             auto parent_name = get_name(parent, map);
-            strip(parent_name);
             fout << "  " << parent_name << " -> " << name << std::endl;
         }
     }
@@ -103,14 +101,79 @@ void print_dependencies(int key, Map const& parent_map, NameMap const& map) {
     for(auto const &p : key_pairs) {
         auto from_name = get_name(p.first,  map);
         auto to_name   = get_name(p.second, map);
-        strip(from_name);
-        strip(to_name);
         fout << "  " << from_name << " -> " << to_name << std::endl;
     }
     fout << "}" << std::endl;
 }
 
-int main(void) {
+template <typename T>
+struct container_wrapper {};
+
+template <>
+struct container_wrapper<Map> {
+    std::vector<int> const& get_vec(std::vector<int> const& c) {
+        return c;
+    }
+
+    int get_k(std::vector<int> const& c) {
+        return counter_;
+    }
+
+    void increment() {
+        counter_++;
+    }
+
+    int counter_ = 0;
+};
+
+template <>
+struct container_wrapper<SparseMap> {
+    std::vector<int> const& get_vec(std::pair<int, std::vector<int>> const& c) {
+        return c.second;
+    }
+
+    int get_k(std::pair<int, std::vector<int>> const& c) {
+        return c.first;
+    }
+
+    void increment() {};
+};
+
+// generate a list that describes a safe build order
+// performs topological sort on the DAG
+template <typename MapType>
+std::list<int> generate_dependency_list(MapType &parent_map, MapType &child_map) {
+    std::set<int> S;
+    container_wrapper<MapType> wrapper;
+    int k=0;
+    for(auto const& parents : parent_map) {
+        if( !wrapper.get_vec(parents).size() ) {
+            S.insert(wrapper.get_k(parents));
+        }
+        wrapper.increment();
+    }
+    // build the ordered list
+    std::list<int> L;
+    while( S.size() ) {
+        // remove an entry from S
+        int n = *S.begin();
+        S.erase(S.begin());
+        L.push_back(n);
+        for( auto m : child_map[n] ) {
+            auto pos = std::find(parent_map[m].begin(), parent_map[m].end(), n);
+            parent_map[m].erase(pos);
+            if( !parent_map[m].size() ) {
+                S.insert(m);
+            }
+        }
+        // remove child edge references
+        child_map[n].resize(0);
+    }
+
+    return L;
+}
+
+int main(int argc, char** argv) {
     ///////////////////////////////////////////////
     // scan the input file to build a list of dependencies
     ///////////////////////////////////////////////
@@ -142,7 +205,8 @@ int main(void) {
     // parse once to get all the keys
     NameMap name_map;
     for(auto const& line : lines) {
-        for(auto const& name : split_string(line, ' ')) {
+        for(auto & name : split_string(line, ' ')) {
+            strip(name); // remove trailing .o from name
             get_key(name, name_map);
         }
     }
@@ -152,7 +216,8 @@ int main(void) {
     for(auto const& line : lines) {
         auto members = split_string(line, ' ');
         std::vector<int> keys;
-        for(auto const& name : members) {
+        for(auto & name : members) {
+            strip(name); // remove trailing .o from name
             keys.push_back(get_key(name, name_map));
         }
         assert(keys.size()>1);
@@ -170,45 +235,48 @@ int main(void) {
     // sort the file names according to dependency
     ///////////////////////////////////////////////
 
-    // sample of how to print out a graphviz file to visualize dependencies of
-    // a key. Don't try this for the global dependencies list, the graph is
-    // too big to realistically render
-    std::vector<int> keys_to_print;// = {32};
-
-    keys_to_print.push_back( find_key(std::string("utilities.o"), name_map) );
-    keys_to_print.push_back( find_key(std::string("data_parameters.o"), name_map) );
-    keys_to_print.push_back( find_key(std::string("parallel_utilities.o"), name_map) );
-
-    print_connections(keys_to_print, child_map, parent_map, name_map);
-    print_dependencies(45, parent_map, name_map);
-
-    std::cout << "sorting" << std::endl;
-    // topological sort on the DAG
-    // initialize set S with all nodes with no incoming edges
-    std::set<int> S;
-    int k = 0;
-    for(auto const& parents : parent_map) {
-        if( !parents.size() ) {
-            S.insert(k);
-        }
-        ++k;
-    }
-    // build the ordered list
     std::list<int> L;
-    while( S.size() ) {
-        // remove an entry from S
-        int n = *S.begin();
-        S.erase(S.begin());
-        L.push_back(n);
-        for( auto m : child_map[n] ) {
-            auto pos = std::find(parent_map[m].begin(), parent_map[m].end(), n);
-            parent_map[m].erase(pos);
-            if( !parent_map[m].size() ) {
-                S.insert(m);
-            }
+    if(argc>1) { // generate dependencies for user requested file
+        std::string filename(argv[1]);
+        int key = find_key(filename, name_map);
+        std::cout << "generating dependency list for " << filename << ".o" << std::endl;
+        if(key<0) {
+            std::cout << "ERROR : unable to find key for file with name " << filename << std::endl;
+            exit(1);
         }
-        // remove child edge references
-        child_map[n].resize(0);
+        print_dependencies(key, parent_map, name_map);
+
+        // generate the dependencies as a set of pairs
+        std::set<std::pair<int,int>> key_pairs;
+        get_dependencies(key, parent_map, key_pairs);
+
+        // generate a list of the unique nodes in this set of dependencies
+        std::set<int> nodes;
+        for(auto const& p: key_pairs) {
+            nodes.insert(p.first);
+            nodes.insert(p.second);
+        }
+
+        // use std::map to store the node and parent index information
+        SparseMap reduced_child_map;
+        SparseMap reduced_parent_map;
+        for(auto n: nodes) {
+            // initialize the map entries that we are interested in
+            reduced_child_map[n]  = std::vector<int>();
+            reduced_parent_map[n] = std::vector<int>();
+        }
+
+        for(auto p: key_pairs) {
+            // first = parent, second = child
+            reduced_child_map[p.first].push_back(p.second);
+            reduced_parent_map[p.second].push_back(p.first);
+        }
+
+        L = generate_dependency_list(reduced_parent_map, reduced_child_map);
+    }
+    else { // generate all dependencies
+        std::cout << "generating full dependency list" << std::endl;
+        L = generate_dependency_list(parent_map, child_map);
     }
 
     ///////////////////////////////////////////////
@@ -218,7 +286,6 @@ int main(void) {
     std::ofstream fout("file_list.txt");
     for(auto entry : L) {
         auto name = get_name(entry, name_map);
-        strip(name);
         fout << name << " ";
     }
     fout.close();
