@@ -31,21 +31,18 @@ typedef std::pair<std::string, int>     NamePair;
 typedef std::vector<std::vector<int>>   Map;
 typedef std::map<int, std::vector<int>> SparseMap;
 
-int get_key(std::string const& name, NameMap& map) {
-    auto key_pos = map.find(name);
-    bool is_present = (key_pos != map.end());
-    if( is_present ) {
-        return key_pos->second;
-    } else {
-        int key = map.size();
-        map.insert( NamePair(name, key));
-        return key;
-    }
-}
-
 int find_key(std::string const& name, NameMap& map) {
     auto key_pos = map.find(name);
     return key_pos==map.end() ? -1 : key_pos->second;
+}
+
+int get_key(std::string const& name, NameMap& map) {
+    auto key = find_key(name, map);
+    if( key<0 ) {
+        key = map.size();
+        map.insert( NamePair(name, key));
+    }
+    return key;
 }
 
 std::string get_name(int key, NameMap const& map) {
@@ -60,29 +57,8 @@ void strip(std::string &str) {
     str.erase(pos, str.end());
 }
 
-void print_connections( std::vector<int> const& keys,
-                        Map const& child_map,
-                        Map const& parent_map,
-                        NameMap const& map)
-{
-    std::ofstream fout("depend.dot");
-    fout << "Digraph G {" << std::endl;
-    for(auto k : keys) {
-        auto const& children = child_map[k];
-        std::string name = get_name(k, map);
-        for(auto child : children) {
-            auto child_name = get_name(child, map);
-            fout << "  " << name << " -> " << child_name << std::endl;
-        }
-        auto const& parents = parent_map[k];
-        for(auto parent : parents) {
-            auto parent_name = get_name(parent, map);
-            fout << "  " << parent_name << " -> " << name << std::endl;
-        }
-    }
-    fout << "}" << std::endl;
-}
-
+// return a set of (int,int) tuples that describe (parent,child) connections
+// in the dependency DAG for key
 void get_dependencies(  int key,
                         Map const& parent_map,
                         std::set<std::pair<int,int>> &key_pairs)
@@ -109,6 +85,8 @@ void print_dependencies(int key, Map const& parent_map, NameMap const& map) {
 template <typename T>
 struct container_wrapper {};
 
+// access wrapper for a Map
+// the key has to be stored in state separate from the storage
 template <>
 struct container_wrapper<Map> {
     std::vector<int> const& get_vec(std::vector<int> const& c) {
@@ -126,6 +104,8 @@ struct container_wrapper<Map> {
     int counter_ = 0;
 };
 
+// access wrapper for a sparse map
+// the key is int the iterator returned from SparseMap
 template <>
 struct container_wrapper<SparseMap> {
     std::vector<int> const& get_vec(std::pair<int, std::vector<int>> const& c) {
@@ -140,7 +120,7 @@ struct container_wrapper<SparseMap> {
 };
 
 // generate a list that describes a safe build order
-// performs topological sort on the DAG
+// performs topological sort on the DAG described by (parent_map, child_map)
 template <typename MapType>
 std::list<int> generate_dependency_list(MapType &parent_map, MapType &child_map) {
     std::set<int> S;
@@ -234,7 +214,6 @@ int main(int argc, char** argv) {
     ///////////////////////////////////////////////
     // sort the file names according to dependency
     ///////////////////////////////////////////////
-
     std::list<int> L;
     if(argc>1) { // generate dependencies for user requested file
         std::string filename(argv[1]);
@@ -244,6 +223,7 @@ int main(int argc, char** argv) {
             std::cout << "ERROR : unable to find key for file with name " << filename << std::endl;
             exit(1);
         }
+        // print the DAG as a .dot file
         print_dependencies(key, parent_map, name_map);
 
         // generate the dependencies as a set of pairs
@@ -257,17 +237,18 @@ int main(int argc, char** argv) {
             nodes.insert(p.second);
         }
 
-        // use std::map to store the node and parent index information
+        // use sparse storage because only the nodes upon which filename depends
+        // need to be stored and indexed
         SparseMap reduced_child_map;
         SparseMap reduced_parent_map;
+        // initialize the storage for each node that filename depends on
         for(auto n: nodes) {
-            // initialize the map entries that we are interested in
-            reduced_child_map[n]  = std::vector<int>();
             reduced_parent_map[n] = std::vector<int>();
+            reduced_child_map[n]  = std::vector<int>();
         }
 
+        // build the edges in the dependency DAG of filename
         for(auto p: key_pairs) {
-            // first = parent, second = child
             reduced_child_map[p.first].push_back(p.second);
             reduced_parent_map[p.second].push_back(p.first);
         }
@@ -285,8 +266,7 @@ int main(int argc, char** argv) {
 
     std::ofstream fout("file_list.txt");
     for(auto entry : L) {
-        auto name = get_name(entry, name_map);
-        fout << name << " ";
+        fout << get_name(entry, name_map) << " ";
     }
     fout.close();
 
