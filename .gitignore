@@ -12,3 +12,5 @@ depend
 *.pdf
 
 ftn_utils
+
+ftn_deps
