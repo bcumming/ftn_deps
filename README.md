@@ -61,3 +61,6 @@ Note that it is not a good idea to try drawing the dependencies for the full pro
 
 ![Image]
 (https://github.com/bcumming/ftn_deps/blob/master/depend.jpg)
+
+![Image]
+(https://github.com/bcumming/ftn_deps/blob/master/grid_metric_utilities.jpg)
