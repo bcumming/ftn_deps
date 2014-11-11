@@ -3,9 +3,9 @@ An application for
 - generate the set of dependencies and their order of compilation for a single file
 
 ###Step 1
-convert the .depends file using strip.sh
+convert the __.depend__ file using strip.sh (there is a dummy .depend file already in the repository)
 ```
-> cp <location of .depends>/.depends .
+> cp <location of .depend>/.depend .
 > strip.sh
 ```
 
