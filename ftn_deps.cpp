@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
     std::ifstream fid("depend", std::ifstream::in);
     if( !fid.is_open() ) {
         std::cout << "ERROR: unable to open \"depend\" for input" << std::endl;
-        return 0;
+        return 1;
     }
 
     // read the lines from input file
