@@ -9,4 +9,7 @@
 a.out
 
 *.pdf
+
+ftn_utils
+
 ftn_deps
