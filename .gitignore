@@ -7,7 +7,6 @@
 *.swq
 
 a.out
-depend
 
 *.pdf
 ftn_deps
